@@ -1,5 +1,51 @@
 import React from 'react';
 import { FaGasPump, FaRulerHorizontal } from 'react-icons/fa';
+import box_truck_isolated_on_background from "../../assets/images/box_truck_isolated_on_background 1.svg"
+
+// Custom speedometer component
+const Speedometer = ({ value, maxValue }:any) => {
+  const percentage = (value / maxValue) * 100;
+  return (
+    <div className="relative h-40 w-full">
+      {/* Speedometer arc background */}
+      <div className="absolute w-full h-40 flex items-center justify-center">
+        <div className="w-64 h-32 overflow-hidden relative">
+          <div className="w-64 h-64 rounded-full border-16 border-gray-700 absolute bottom-0"></div>
+          <div 
+            className="w-64 h-64 rounded-full border-16 border-gradient-to-r from-blue-500 via-yellow-500 to-red-500 absolute bottom-0 transition-transform duration-500"
+            style={{ clipPath: `polygon(50% 50%, 0 50%, 0 0, ${50 + percentage/2}% 0, 50% 50%)` }}
+          ></div>
+          
+          {/* Needle */}
+          <div 
+            className="absolute bottom-0 left-1/2 w-1 h-28 bg-red-500 origin-bottom transition-transform duration-500"
+            style={{ transform: `translateX(-50%) rotate(${-90 + (percentage * 1.8)}deg)` }}
+          >
+            <div className="w-3 h-3 rounded-full bg-red-500 absolute -left-1 -top-1"></div>
+          </div>
+          
+          {/* Center point */}
+          <div className="absolute bottom-0 left-1/2 w-4 h-4 bg-white rounded-full transform -translate-x-1/2"></div>
+        </div>
+      </div>
+      
+      {/* Speed display */}
+      <div className="absolute bottom-0 left-0 right-0 text-center">
+        <div className="text-4xl font-bold">{value}</div>
+        <div className="text-xs text-gray-400">km/h</div>
+      </div>
+      
+      {/* Markings */}
+      <div className="absolute bottom-2 left-0 right-0 flex justify-between px-8 text-xs text-gray-500">
+        <div>0</div>
+        <div>40</div>
+        <div>80</div>
+        <div>120</div>
+        <div>160</div>
+      </div>
+    </div>
+  );
+};
 
 interface VehicleInfoProps {
   dateTime?: string;
@@ -16,7 +62,7 @@ interface VehicleInfoProps {
 const VehicleInfo: React.FC<VehicleInfoProps> = ({
   dateTime = '14 Apr 2025 (Mon) | 21:12:20',
   vehicleName = 'Vehicle model name',
-  currentSpeed = 64,
+  currentSpeed = 0,
   maxSpeed = 160,
   deviceId = '7639817643372',
   startFuel = 71,
@@ -24,8 +70,7 @@ const VehicleInfo: React.FC<VehicleInfoProps> = ({
   fuelUsed = 52,
   mileage = 8.68
 }) => {
-  // Calculate speed gauge percentage
-  const speedPercentage = (currentSpeed / maxSpeed) * 100;
+  const vehImg = box_truck_isolated_on_background;
   
   return (
     <div className="bg-black text-white flex flex-col h-full w-full">
@@ -38,7 +83,7 @@ const VehicleInfo: React.FC<VehicleInfoProps> = ({
       {/* Vehicle Image */}
       <div className="flex justify-center items-center p-6">
         <img 
-          src="/api/placeholder/240/160" 
+          src={vehImg} 
           alt="Vehicle" 
           className="max-w-full"
         />
@@ -51,50 +96,22 @@ const VehicleInfo: React.FC<VehicleInfoProps> = ({
       
       {/* Speedometer */}
       <div className="px-4 mb-6">
-        <div className="relative">
-          {/* Speedometer Arc */}
-          <div className="h-32 flex flex-col justify-center items-center">
-            {/* Speedometer visualization */}
-            <div className="relative w-full h-16">
-              {/* Background arc */}
-              <div className="absolute h-16 w-full bg-gradient-to-r from-blue-500 via-yellow-500 to-red-500 opacity-30 rounded-t-full"></div>
-              
-              {/* Current speed indicator */}
-              <div 
-                className="absolute h-16 rounded-t-full bg-gradient-to-r from-blue-500 via-yellow-500 to-red-500" 
-                style={{ width: `${speedPercentage}%` }}
-              ></div>
-              
-              {/* Speed markings */}
-              <div className="absolute w-full bottom-0 flex justify-between px-2 text-xs">
-                <div>0</div>
-                <div>20</div>
-                <div>40</div>
-                <div>60</div>
-                <div>80</div>
-                <div>100</div>
-                <div>120</div>
-                <div>140</div>
-                <div>160</div>
-              </div>
-            </div>
-            
-            {/* Current speed display */}
-            <div className="text-4xl font-bold mt-2">{currentSpeed}%</div>
-            <div className="text-xs text-gray-400">km/h</div>
-          </div>
-        </div>
+        <Speedometer value={currentSpeed} maxValue={maxSpeed} />
       </div>
       
       {/* Device Information */}
-      <div className="grid grid-cols-2 gap-2 px-4">
+      <div className="grid grid-cols-3 gap-2 px-4">
         <div className="bg-gray-900 p-3 rounded">
-          <div className="text-xs text-gray-400 mb-1">Device ID</div>
-          <div className="text-sm font-medium">{deviceId}</div>
+          <div className="text-xs text-gray-400 mb-1">Ignition</div>
+          <div className="text-sm font-medium">On</div>
         </div>
         <div className="bg-gray-900 p-3 rounded">
-          <div className="text-xs text-gray-400 mb-1">Vehicle ID</div>
-          <div className="text-sm font-medium">{deviceId}</div>
+          <div className="text-xs text-gray-400 mb-1">IMEI</div>
+          <div className="text-sm font-medium truncate">{deviceId}</div>
+        </div>
+        <div className="bg-gray-900 p-3 rounded">
+          <div className="text-xs text-gray-400 mb-1">GST</div>
+          <div className="text-sm font-medium">7656709987</div>
         </div>
       </div>
       

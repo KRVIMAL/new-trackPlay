@@ -26,6 +26,7 @@ const MapDisplay: React.FC<MapDisplayProps> = ({
   const [map, setMap] = useState<google.maps.Map | null>(null);
   const [mapsLoaded, setMapsLoaded] = useState<boolean>(false);
   const loaderRef = useRef<Loader | null>(null);
+  const polylineRef = useRef<google.maps.Polyline | null>(null);
   
   // Initialize map only once
   useEffect(() => {
@@ -52,6 +53,7 @@ const MapDisplay: React.FC<MapDisplayProps> = ({
             mapTypeId: "terrain",
           });
           setMap(mapInstance);
+          // Notify parent component that map is ready
           onMapReady(mapInstance);
         }
       } catch (error) {
@@ -63,20 +65,21 @@ const MapDisplay: React.FC<MapDisplayProps> = ({
     
     // Cleanup function
     return () => {
-      // No need to clean up the loader itself
+      // No cleanup needed for loader
     };
-  }, [apiKey, onMapReady, map, mapsLoaded]);
+  }, [apiKey, map, mapsLoaded]);
 
   // Draw track line once data is available and map is ready
   useEffect(() => {
     if (!map || trackData.length === 0 || !mapsLoaded) return;
 
-    const drawTrack = async () => {
-      // Clean up previous polyline and markers
-      if (polyline) polyline.setMap(null);
-      if (startMarker) startMarker.setMap(null);
-      if (endMarker) endMarker.setMap(null);
+    // Clean up previous polyline (we'll handle this ourselves rather than relying on props)
+    if (polylineRef.current) {
+      polylineRef.current.setMap(null);
+      polylineRef.current = null;
+    }
 
+    const drawTrack = async () => {
       try {
         const path = trackData.map((point) => ({
           lat: point.latitude,
@@ -104,6 +107,10 @@ const MapDisplay: React.FC<MapDisplayProps> = ({
           strokeWeight: 3,
         });
 
+        // Store in ref to avoid state updates
+        polylineRef.current = polylineInstance;
+        
+        // Notify parent component about the new polyline
         onPolylineCreated(polylineInstance);
 
         // Fit the map to the polyline bounds
@@ -118,7 +125,7 @@ const MapDisplay: React.FC<MapDisplayProps> = ({
     };
 
     drawTrack();
-  }, [map, trackData, onPolylineCreated, polyline, startMarker, endMarker, mapsLoaded]);
+  }, [map, trackData, mapsLoaded]); // Removed onPolylineCreated from dependencies
 
   return (
     <div className="relative w-full h-full">

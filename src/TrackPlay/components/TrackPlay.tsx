@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useParams } from "react-router-dom";
 import axios from "axios";
 import Header from "./Header";
@@ -8,9 +8,14 @@ import Controls from "./Controls";
 import Graph from "./Graph";
 
 // Constants
-const GOOGLE_MAPS_API_KEY: string = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
+const GOOGLE_MAPS_API_KEY: string =
+  import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
 const BASE_URL = "https://api-dev.k8s.imztech.io/api/v1/track-play";
 const TRIP_API_URL = "http://localhost:9099/trip";
+
+// Toggle between API and local JSON file data
+// Set to true to use local JSON file data, false to use API data
+const USE_LOCAL_JSON = true;
 
 // Sample IMEI list for dropdown
 const SAMPLE_IMEI_LIST = [
@@ -21,6 +26,7 @@ const SAMPLE_IMEI_LIST = [
   { value: "900070635323", label: "900070635323" },
   { value: "700080635323", label: "700080635323" },
   { value: "700090635323", label: "700090635323" },
+  { value: "688056026976", label: "688056026976" }, // Added from JSON sample
 ];
 
 // Interface definitions
@@ -32,6 +38,7 @@ interface TrackDataPoint {
   altitude: number;
   bearing: number;
   dateTime: string;
+  speed?: number; // Added speed as optional field
 }
 
 interface TrackDataResponse {
@@ -40,58 +47,94 @@ interface TrackDataResponse {
   data: TrackDataPoint[];
 }
 
+// Raw JSON data interface to match the structure in trackData.json
+interface RawJsonDataPoint {
+  _id: {
+    $oid: string;
+  };
+  latitude: number;
+  longitude: number;
+  imei: string;
+  altitude: number;
+  bearing: number;
+  dateTime: string;
+  speed: number;
+  statusBitDefinition?: any;
+  alarmFlagBit?: any;
+  deviceType?: string;
+  headerIdentifier?: string;
+  packetType?: string;
+  serialNo?: string;
+  messageProperty?: string;
+  "Additional Data"?: any[];
+}
+
 const TrackPlay: React.FC = () => {
   // Route params
   const params = useParams();
   const tripId = params.tripId;
-  
+
   // Map and animation state
   const [map, setMap] = useState<google.maps.Map | null>(null);
   const [polyline, setPolyline] = useState<google.maps.Polyline | null>(null);
-  const [startMarker, setStartMarker] = useState<google.maps.Marker | null>(null);
+  const [startMarker, setStartMarker] = useState<google.maps.Marker | null>(
+    null
+  );
   const [endMarker, setEndMarker] = useState<google.maps.Marker | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const animationRef = useRef<number | null>(null);
   const countRef = useRef<number>(0);
   const [animationSpeed, setAnimationSpeed] = useState<number>(20);
-  
+
   // Data and UI state
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [trackData, setTrackData] = useState<TrackDataPoint[]>([]);
-  const [selectedImei, setSelectedImei] = useState<string>("937066763492");
-  const [startDate, setStartDate] = useState<string>("2025-03-18T10:07:58Z");
-  const [endDate, setEndDate] = useState<string>("2025-03-18T10:08:57Z");
+  const [selectedImei, setSelectedImei] = useState<string>("688056026976"); // Changed default to match JSON data
+  const [startDate, setStartDate] = useState<string>("2025-03-12T11:39:00Z"); // Changed to match JSON data
+  const [endDate, setEndDate] = useState<string>("2025-03-12T11:41:00Z"); // Changed to match JSON data
   const [tripDataLoaded, setTripDataLoaded] = useState<boolean>(false);
-  
+
   // Current track data point for vehicle info display
   const [currentPoint, setCurrentPoint] = useState<TrackDataPoint | null>(null);
-  
+
+  // Make callbacks stable with useCallback to prevent infinite loops
+  const handleMapReady = useCallback((mapInstance: google.maps.Map) => {
+    setMap(mapInstance);
+  }, []);
+
+  const handlePolylineCreated = useCallback(
+    (polylineInstance: google.maps.Polyline) => {
+      setPolyline(polylineInstance);
+    },
+    []
+  );
+
   // Date conversion helpers
   const convertTimestampToISOString = (timestamp: number): string => {
     const date = new Date(timestamp);
-    
+
     const istOffsetHours = 5;
     const istOffsetMinutes = 30;
-    
+
     date.setUTCHours(date.getUTCHours() + istOffsetHours);
     date.setUTCMinutes(date.getUTCMinutes() + istOffsetMinutes);
-    
+
     return date.toISOString().slice(0, -1);
   };
 
   const convertToIST = (localDateTimeStr: string): string => {
     if (!localDateTimeStr) return "";
-    
+
     const localDate = new Date(localDateTimeStr);
-    
+
     const year = localDate.getFullYear();
-    const month = String(localDate.getMonth() + 1).padStart(2, '0');
-    const day = String(localDate.getDate()).padStart(2, '0');
-    const hours = String(localDate.getHours()).padStart(2, '0');
-    const minutes = String(localDate.getMinutes()).padStart(2, '0');
-    const seconds = String(localDate.getSeconds()).padStart(2, '0');
-    
+    const month = String(localDate.getMonth() + 1).padStart(2, "0");
+    const day = String(localDate.getDate()).padStart(2, "0");
+    const hours = String(localDate.getHours()).padStart(2, "0");
+    const minutes = String(localDate.getMinutes()).padStart(2, "0");
+    const seconds = String(localDate.getSeconds()).padStart(2, "0");
+
     return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
   };
 
@@ -99,39 +142,236 @@ const TrackPlay: React.FC = () => {
   const formatDateForDisplay = (dateString: string): string => {
     const date = new Date(dateString);
     const options: Intl.DateTimeFormatOptions = {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
     };
-    
-    const formattedDate = date.toLocaleDateString('en-US', options);
-    const dayOfWeek = date.toLocaleDateString('en-US', { weekday: 'short' });
-    
-    return `${formattedDate.split(',')[0]} ${date.getFullYear()} (${dayOfWeek}) | ${
-      formattedDate.split(',')[1].trim()
-    }`;
+
+    const formattedDate = date.toLocaleDateString("en-US", options);
+    const dayOfWeek = date.toLocaleDateString("en-US", { weekday: "short" });
+
+    return `${formattedDate.split(",")[0]} ${date.getFullYear()} (${dayOfWeek}) | ${formattedDate
+      .split(",")[1]
+      .trim()}`;
+  };
+
+  // Transform raw JSON data to match API response structure
+  const transformJsonData = (
+    jsonData: RawJsonDataPoint[]
+  ): TrackDataResponse => {
+    return {
+      success: true,
+      count: jsonData.length,
+      data: jsonData.map((item) => ({
+        _id: item._id.$oid || String(item._id),
+        latitude: item.latitude,
+        longitude: item.longitude,
+        imei: item.imei,
+        altitude: item.altitude,
+        bearing: item.bearing,
+        dateTime: item.dateTime,
+        speed: item.speed || 0,
+      })),
+    };
+  };
+
+  // Fetch data from local JSON file
+  const fetchLocalJsonData = async () => {
+    if (!selectedImei) {
+      setError("Please select an IMEI");
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    // Clear existing markers and polyline
+    if (startMarker) startMarker.setMap(null);
+    if (endMarker) endMarker.setMap(null);
+    if (polyline) polyline.setMap(null);
+
+    // Reset animation
+    handleReset();
+
+    try {
+      // Initialize with hardcoded data as fallback
+      let jsonData = [
+        {
+          _id: {
+            $oid: "dd65f2b8b35370cf6f923df1",
+          },
+          bearing: 0,
+          dateTime: "2025-03-12T11:40:23Z",
+          longitude: 77.193361,
+          speed: 59,
+          imei: "688056026976",
+          latitude: 28.543625,
+          altitude: 0,
+        },
+        {
+          _id: {
+            $oid: "90383474e5d882e77b002b5d",
+          },
+          bearing: 0,
+          dateTime: "2025-03-12T11:41:23Z",
+          longitude: 77.207,
+          speed: 9,
+          imei: "688056026976",
+          latitude: 28.540184,
+          altitude: 0,
+        },
+        {
+          _id: {
+            $oid: "753db44e465552d583844b62",
+          },
+          bearing: 0,
+          dateTime: "2025-03-12T11:42:23Z",
+          longitude: 77.1972,
+          speed: 14,
+          imei: "688056026976",
+          latitude: 28.547096,
+          altitude: 0,
+        },
+      ];
+
+      // Attempt to fetch from file instead of using hardcoded data
+      try {
+        const response = await fetch("/trackdata.json");
+
+        if (!response.ok) {
+          throw new Error(
+            `Failed to fetch JSON file: ${response.status} ${response.statusText}`
+          );
+        }
+
+        const rawData = await response.json();
+        console.log(`Successfully loaded data from JSON file`);
+
+        // Handle both formats - direct array or nested inside getDistanceTrackPlay
+        if (rawData.data && rawData.data.getDistanceTrackPlay) {
+          // Format: { "data": { "getDistanceTrackPlay": [...] } }
+          console.log("Found data in getDistanceTrackPlay format");
+
+          // Convert string values to numbers
+          jsonData = rawData.data.getDistanceTrackPlay.map((point: any) => ({
+            _id: Math.random().toString(36).substring(2, 15), // Generate a random ID
+            latitude: parseFloat(point.latitude),
+            longitude: parseFloat(point.longitude),
+            imei: point.imei,
+            altitude: 0, // Default value as it's not in the provided data
+            bearing: parseInt(point.bearing, 10) || 0,
+            dateTime: new Date().toISOString(), // Use current time as the data doesn't have date
+            speed: parseInt(point.speed, 10) || 0,
+          }));
+        } else if (Array.isArray(rawData)) {
+          // Format: direct array with _id objects
+          console.log("Found data in array format with MongoDB style IDs");
+          jsonData = rawData;
+        } else {
+          console.warn("Unknown data format, falling back to hardcoded data");
+        }
+      } catch (fetchError) {
+        console.warn("Falling back to hardcoded data:", fetchError);
+        // Use the hardcoded jsonData defined above
+      }
+
+      console.log(`Processing ${jsonData.length} track data points`);
+
+      // Filter data by IMEI and date range if provided
+      const startDateTime = new Date(startDate).getTime();
+      const endDateTime = new Date(endDate).getTime();
+
+      const filteredData = jsonData.filter((item) => {
+        if (!item || !item.dateTime || !item.imei) {
+          console.warn("Skipping invalid data point:", item);
+          return false;
+        }
+
+        const itemDateTime = new Date(item.dateTime).getTime();
+        return (
+          item.imei === selectedImei &&
+          itemDateTime >= startDateTime &&
+          itemDateTime <= endDateTime
+        );
+      });
+
+      console.log(
+        `Filtered to ${filteredData.length} points for IMEI ${selectedImei}`
+      );
+
+      if (filteredData.length === 0) {
+        setError("No track data available for the selected criteria");
+        setLoading(false);
+        return;
+      }
+
+      // Transform to match API response structure
+      const transformedData = {
+        success: true,
+        count: filteredData.length,
+        data: filteredData.map((item) => ({
+          _id:
+            item._id && item._id.$oid
+              ? item._id.$oid
+              : String(item._id || Math.random().toString(36).substring(2, 15)),
+          latitude:
+            typeof item.latitude === "string"
+              ? parseFloat(item.latitude)
+              : item.latitude,
+          longitude:
+            typeof item.longitude === "string"
+              ? parseFloat(item.longitude)
+              : item.longitude,
+          imei: item.imei,
+          altitude: item.altitude || 0,
+          bearing:
+            typeof item.bearing === "string"
+              ? parseInt(item.bearing, 10)
+              : item.bearing || 0,
+          dateTime: item.dateTime,
+          speed:
+            typeof item.speed === "string"
+              ? parseInt(item.speed, 10)
+              : item.speed || 0,
+        })),
+      };
+
+      setTrackData(transformedData.data);
+      setCurrentPoint(transformedData.data[0]);
+    } catch (err) {
+      setError(
+        `Failed to process data: ${err instanceof Error ? err.message : "Unknown error"}`
+      );
+      console.error("Error processing data:", err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Fetch trip data on initial load if tripId is provided
   useEffect(() => {
     const fetchTripData = async () => {
       if (!tripId) return;
-      
+
       setLoading(true);
       setError(null);
-      
+
       try {
         const response: any = await axios.get<any>(`${TRIP_API_URL}/${tripId}`);
         if (response.data.success && response.data.data) {
           const { vehicleDetails, tripDetails } = response.data.data;
           const imei = vehicleDetails.vehicleNumber.device.imei;
-          const startDateISO = convertTimestampToISOString(tripDetails.tripExpectedStartDate);
-          const endDateISO = convertTimestampToISOString(tripDetails.tripExpectedEndDate);
-       
+          const startDateISO = convertTimestampToISOString(
+            tripDetails.tripExpectedStartDate
+          );
+          const endDateISO = convertTimestampToISOString(
+            tripDetails.tripExpectedEndDate
+          );
+
           setSelectedImei(imei);
           setStartDate(startDateISO);
           setEndDate(endDateISO);
@@ -140,64 +380,70 @@ const TrackPlay: React.FC = () => {
           setError("Failed to fetch trip data");
         }
       } catch (err) {
-        setError(`Error fetching trip data: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        setError(
+          `Error fetching trip data: ${err instanceof Error ? err.message : "Unknown error"}`
+        );
         console.error("Error fetching trip data:", err);
       } finally {
         setLoading(false);
       }
     };
-    
+
     fetchTripData();
   }, [tripId]);
 
   // Auto fetch track data after trip data is loaded
   useEffect(() => {
     if (tripDataLoaded && tripId) {
-      fetchTrackData();
+      if (USE_LOCAL_JSON) {
+        fetchLocalJsonData();
+      } else {
+        fetchTrackData();
+      }
       setTripDataLoaded(false); // Reset to prevent multiple calls
     }
-  }, [tripDataLoaded]);
+  }, [tripDataLoaded, tripId]);
 
-  // Fetch track data function
+  // Fetch track data from API function
   const fetchTrackData = async () => {
     if (!selectedImei || !startDate || !endDate) {
       setError("Please select IMEI, start date, and end date");
       return;
     }
-    
+
     setLoading(true);
     setError(null);
-    
+
     // Clear existing markers and polyline
     if (startMarker) startMarker.setMap(null);
     if (endMarker) endMarker.setMap(null);
     if (polyline) polyline.setMap(null);
-    
+
     // Reset animation
     handleReset();
-    
+
     try {
       // Convert local times to UTC for API request
       const istStartDate = convertToIST(startDate);
       const istEndDate = convertToIST(endDate);
-      
+
       const response = await axios.get<TrackDataResponse>(
         `${BASE_URL}/trackdata`,
         {
           params: {
             startDate: istStartDate,
             endDate: istEndDate,
-            imei: selectedImei
+            imei: selectedImei,
           },
           headers: {
             "Content-Type": "application/json",
-          }
+          },
         }
       );
-      
+
       if (response.data.success && response.data.data.length > 0) {
         setTrackData(response.data.data);
-        
+
         // Set current point to first point for initial display
         setCurrentPoint(response.data.data[0]);
       } else {
@@ -215,14 +461,14 @@ const TrackPlay: React.FC = () => {
   const animateSymbol = (line: google.maps.Polyline) => {
     animationRef.current = window.setInterval(() => {
       countRef.current = (countRef.current + 1) % 201;
-      
+
       if (line && line.get) {
         const icons = line.get("icons");
         if (icons && icons[0]) {
           // Calculate offset from 0% to 100%
-          icons[0].offset = (countRef.current / 2) + "%";
+          icons[0].offset = countRef.current / 2 + "%";
           line.set("icons", icons);
-          
+
           // Update current point based on animation progress
           if (trackData.length > 0) {
             const pointIndex = Math.min(
@@ -231,7 +477,7 @@ const TrackPlay: React.FC = () => {
             );
             setCurrentPoint(trackData[pointIndex]);
           }
-  
+
           // Stop at 100%
           if (countRef.current === 200) {
             if (animationRef.current) {
@@ -264,12 +510,12 @@ const TrackPlay: React.FC = () => {
     }
     setIsPlaying(false);
     countRef.current = 0;
-    
+
     // Reset to first point
     if (trackData.length > 0) {
       setCurrentPoint(trackData[0]);
     }
-    
+
     if (polyline && polyline.get) {
       const icons = polyline.get("icons");
       if (icons && icons[0]) {
@@ -281,22 +527,12 @@ const TrackPlay: React.FC = () => {
 
   const handleSpeedIncrease = () => {
     if (animationSpeed > 5) {
-      setAnimationSpeed(prev => prev - 5);
+      setAnimationSpeed((prev) => prev - 5);
     }
   };
 
   const handleSpeedDecrease = () => {
-    setAnimationSpeed(prev => prev + 5);
-  };
-
-  // Update polyline when map is available
-  const handleMapReady = (mapInstance: google.maps.Map) => {
-    setMap(mapInstance);
-  };
-
-  // Handle polyline creation
-  const handlePolylineCreated = (polylineInstance: google.maps.Polyline) => {
-    setPolyline(polylineInstance);
+    setAnimationSpeed((prev) => prev + 5);
   };
 
   // Create start and end markers when track data is updated
@@ -327,10 +563,10 @@ const TrackPlay: React.FC = () => {
             strokeColor: "#ffffff",
             strokeWeight: 2,
           },
-          title: "Start Point"
+          title: "Start Point",
         });
         setStartMarker(newStartMarker);
-        
+
         // End marker (red)
         const endPoint = path[path.length - 1];
         const newEndMarker = new google.maps.Marker({
@@ -344,7 +580,7 @@ const TrackPlay: React.FC = () => {
             strokeColor: "#ffffff",
             strokeWeight: 2,
           },
-          title: "End Point"
+          title: "End Point",
         });
         setEndMarker(newEndMarker);
       }
@@ -361,7 +597,7 @@ const TrackPlay: React.FC = () => {
       }
       animateSymbol(polyline);
     }
-  }, [animationSpeed]);
+  }, [animationSpeed, isPlaying, polyline]);
 
   // Clean up on unmount
   useEffect(() => {
@@ -374,41 +610,110 @@ const TrackPlay: React.FC = () => {
 
   // Parse vehicle information for display
   const getVehicleInfo = () => {
-    if (!currentPoint) return {
-      dateTime: formatDateForDisplay(new Date().toISOString()),
-      speed: 0,
-      deviceId: selectedImei
-    };
+    if (!currentPoint)
+      return {
+        dateTime: formatDateForDisplay(new Date().toISOString()),
+        speed: 0,
+        deviceId: selectedImei,
+      };
 
     return {
       dateTime: formatDateForDisplay(currentPoint.dateTime),
-      speed: Math.round(Math.random() * 100), // Mocked speed value
-      deviceId: currentPoint.imei
+      speed:
+        currentPoint.speed !== undefined
+          ? currentPoint.speed
+          : Math.round(Math.random() * 100), // Use actual speed if available
+      deviceId: currentPoint.imei,
     };
   };
 
   const vehicleInfo = getVehicleInfo();
 
+  // Handle "Show Route" button click
+  const handleShowRoute = () => {
+    if (USE_LOCAL_JSON) {
+      fetchLocalJsonData();
+    } else {
+      fetchTrackData();
+    }
+  };
+
+  // Step forward/backward in the track animation
+  const handleStepForward = () => {
+    if (!trackData.length || !polyline) return;
+
+    // Move forward 10 seconds equivalent
+    const stepSize = 10;
+    const newPosition = Math.min(countRef.current + stepSize, 200);
+    countRef.current = newPosition;
+
+    // Apply to polyline
+    if (polyline && polyline.get) {
+      const icons = polyline.get("icons");
+      if (icons && icons[0]) {
+        icons[0].offset = countRef.current / 2 + "%";
+        polyline.set("icons", icons);
+
+        // Update current point
+        if (trackData.length > 0) {
+          const pointIndex = Math.min(
+            Math.floor((countRef.current / 200) * trackData.length),
+            trackData.length - 1
+          );
+          setCurrentPoint(trackData[pointIndex]);
+        }
+      }
+    }
+  };
+  const handleStepBackward = () => {
+    if (!trackData.length || !polyline) return;
+
+    // Move backward 10 seconds equivalent
+    const stepSize = 10;
+    const newPosition = Math.max(countRef.current - stepSize, 0);
+    countRef.current = newPosition;
+
+    // Apply to polyline
+    if (polyline && polyline.get) {
+      const icons = polyline.get("icons");
+      if (icons && icons[0]) {
+        icons[0].offset = countRef.current / 2 + "%";
+        polyline.set("icons", icons);
+
+        // Update current point
+        if (trackData.length > 0) {
+          const pointIndex = Math.min(
+            Math.floor((countRef.current / 200) * trackData.length),
+            trackData.length - 1
+          );
+          setCurrentPoint(trackData[pointIndex]);
+        }
+      }
+    }
+  };
+
   return (
     <div className="flex flex-col h-full">
       {/* Header with filters and buttons */}
-      <Header 
+      <Header
         selectedImei={selectedImei}
         startDate={startDate}
         endDate={endDate}
         onImeiChange={setSelectedImei}
         onStartDateChange={setStartDate}
         onEndDateChange={setEndDate}
-        onShowRoute={fetchTrackData}
-        onShowDrivingReport={() => console.log("Show driving report - will be implemented later")}
+        onShowRoute={handleShowRoute}
+        onShowDrivingReport={() =>
+          console.log("Show driving report - will be implemented later")
+        }
         imeiList={SAMPLE_IMEI_LIST}
       />
-      
+
       {/* Main content area */}
       <div className="flex flex-col md:flex-row gap-4 px-4 py-4 h-[724px]">
         {/* Left side - Map */}
         <div className="w-full md:w-[calc(100%-423px)] h-full relative rounded-[14px] overflow-hidden border border-gray-200 shadow-sm">
-          <MapDisplay 
+          <MapDisplay
             apiKey={GOOGLE_MAPS_API_KEY}
             trackData={trackData}
             isLoading={loading}
@@ -418,7 +723,7 @@ const TrackPlay: React.FC = () => {
             endMarker={endMarker}
             polyline={polyline}
           />
-          
+
           {/* Error Messages */}
           {error && (
             <div className="absolute top-2.5 left-1/2 transform -translate-x-1/2 bg-red-100 text-red-800 p-2.5 px-5 rounded shadow-md z-10">
@@ -426,10 +731,10 @@ const TrackPlay: React.FC = () => {
             </div>
           )}
         </div>
-        
+
         {/* Right side - Vehicle Info */}
         <div className="w-full md:w-[423px] h-full rounded-[14px] overflow-hidden border border-gray-200 shadow-sm">
-          <VehicleInfo 
+          <VehicleInfo
             dateTime={vehicleInfo.dateTime}
             vehicleName="Vehicle model name"
             currentSpeed={vehicleInfo.speed}
@@ -442,11 +747,11 @@ const TrackPlay: React.FC = () => {
           />
         </div>
       </div>
-      
+
       {/* Footer with controls and graph */}
-      <div className="flex flex-col mt-auto">
+      <div className="flex flex-col md:flex-row gap-4 px-4 py-4">
         {/* Playback Controls */}
-        <Controls 
+        <Controls
           isPlaying={isPlaying}
           disabled={!polyline || loading}
           animationSpeed={animationSpeed}
@@ -454,8 +759,10 @@ const TrackPlay: React.FC = () => {
           onReset={handleReset}
           onSpeedIncrease={handleSpeedIncrease}
           onSpeedDecrease={handleSpeedDecrease}
+          onStepForward={handleStepForward}
+          onStepBackward={handleStepBackward}
         />
-        
+
         {/* Graph (placeholder) */}
         <Graph />
       </div>
