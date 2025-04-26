@@ -1,48 +1,176 @@
 import React from 'react';
 import { FaGasPump, FaRulerHorizontal } from 'react-icons/fa';
-import box_truck_isolated_on_background from "../../assets/images/box_truck_isolated_on_background 1.svg"
+import box_truck_isolated_on_background from "../../assets/images/box_truck_isolated_on_background 1.svg";
 
-// Custom speedometer component
-const Speedometer = ({ value, maxValue }:any) => {
-  const percentage = (value / maxValue) * 100;
+const HalfCircleSpeedometer = ({ speed, maxSpeed = 160 }:any) => {
+  // Speed configuration
+  const min = 0;
+  const max = maxSpeed;
+  const unit = 'km/h';
+  
+  // Segment colors
+  const segments = [
+    { value: 60, color: '#3b82f6' }, // blue
+    { value: 120, color: '#22c55e' }, // green
+    { value: 160, color: '#f97316' }, // orange
+  ];
+  
+  // Ensure value is within bounds
+  const boundedValue = Math.min(Math.max(speed, min), max);
+  const percentage = ((boundedValue - min) / (max - min)) * 100;
+  
+  // Calculate angles for the needle
+  const startAngle = 180;
+  const endAngle = 0;
+  const angleRange = startAngle - endAngle;
+  const valueAngle = startAngle - (percentage / 100) * angleRange;
+  const valueRadians = (valueAngle * Math.PI) / 180;
+  
+  // Calculate needle coordinates
+  const needleLength = 80;
+  const centerX = 100;
+  const centerY = 100;
+  
+  // All speed marks to display with labels
+  const speedMarks = [0, 20, 40, 60, 80, 100, 120, 140, 160];
+  
+  // Minor tick marks without labels
+  const minorMarks = [10, 30, 50, 70, 90, 110, 130, 150];
+  
   return (
-    <div className="relative h-40 w-full">
-      {/* Speedometer arc background */}
-      <div className="absolute w-full h-40 flex items-center justify-center">
-        <div className="w-64 h-32 overflow-hidden relative">
-          <div className="w-64 h-64 rounded-full border-16 border-gray-700 absolute bottom-0"></div>
-          <div 
-            className="w-64 h-64 rounded-full border-16 border-gradient-to-r from-blue-500 via-yellow-500 to-red-500 absolute bottom-0 transition-transform duration-500"
-            style={{ clipPath: `polygon(50% 50%, 0 50%, 0 0, ${50 + percentage/2}% 0, 50% 50%)` }}
-          ></div>
+    <div className="relative w-full flex flex-col items-center">
+      <svg width="100%" height="140" viewBox="0 -20 200 160">
+        {/* Background half circle */}
+        <path
+          d="M 20,100 A 80,80 0 0,1 180,100"
+          fill="none"
+          stroke="black"
+          strokeWidth="20"
+        />
+        
+        {/* Gauge segments */}
+        <path
+          d="M 20,100 A 80,80 0 0,1 100,20"
+          fill="none"
+          stroke={segments[0].color}
+          strokeWidth="20"
+        />
+        <path
+          d="M 100,20 A 80,80 0 0,1 180,100"
+          fill="none"
+          stroke={segments[2].color}
+          strokeWidth="20"
+        />
+        
+        {/* Major tick marks with speed labels */}
+        {speedMarks.map((tickSpeed, index) => {
+          // Calculate position on the arc
+          const angle = Math.PI * (1 - tickSpeed / max);
+          const tickX = 100 + 90 * Math.cos(angle);
+          const tickY = 100 - 90 * Math.sin(angle);
+          const lineEndX = 100 + 70 * Math.cos(angle);
+          const lineEndY = 100 - 70 * Math.sin(angle);
           
-          {/* Needle */}
-          <div 
-            className="absolute bottom-0 left-1/2 w-1 h-28 bg-red-500 origin-bottom transition-transform duration-500"
-            style={{ transform: `translateX(-50%) rotate(${-90 + (percentage * 1.8)}deg)` }}
-          >
-            <div className="w-3 h-3 rounded-full bg-red-500 absolute -left-1 -top-1"></div>
-          </div>
+          // Calculate label position
+          const labelX = 100 + 110 * Math.cos(angle);
+          const labelY = 100 - 110 * Math.sin(angle);
           
-          {/* Center point */}
-          <div className="absolute bottom-0 left-1/2 w-4 h-4 bg-white rounded-full transform -translate-x-1/2"></div>
-        </div>
-      </div>
-      
-      {/* Speed display */}
-      <div className="absolute bottom-0 left-0 right-0 text-center">
-        <div className="text-4xl font-bold">{value}</div>
-        <div className="text-xs text-gray-400">km/h</div>
-      </div>
-      
-      {/* Markings */}
-      <div className="absolute bottom-2 left-0 right-0 flex justify-between px-8 text-xs text-gray-500">
-        <div>0</div>
-        <div>40</div>
-        <div>80</div>
-        <div>120</div>
-        <div>160</div>
-      </div>
+          // Determine text anchor based on position
+          let textAnchor = "middle";
+          if (tickSpeed <= 20) textAnchor = "start";
+          if (tickSpeed >= 140) textAnchor = "end";
+          
+          return (
+            <React.Fragment key={`tick-${tickSpeed}`}>
+              {/* Tick line */}
+              <line
+                x1={lineEndX}
+                y1={lineEndY}
+                x2={tickX}
+                y2={tickY}
+                stroke="white"
+                strokeWidth="2"
+              />
+              
+              {/* Speed label */}
+              <text
+                x={labelX}
+                y={labelY}
+                textAnchor={textAnchor}
+                fill="white"
+                fontSize="12"
+                fontWeight="bold"
+                dominantBaseline="middle"
+              >
+                {tickSpeed}
+              </text>
+            </React.Fragment>
+          );
+        })}
+        
+        {/* Minor tick marks */}
+        {minorMarks.map((tickSpeed) => {
+          const angle = Math.PI * (1 - tickSpeed / max);
+          const tickX = 100 + 85 * Math.cos(angle);
+          const tickY = 100 - 85 * Math.sin(angle);
+          const lineEndX = 100 + 75 * Math.cos(angle);
+          const lineEndY = 100 - 75 * Math.sin(angle);
+          
+          return (
+            <line
+              key={`minor-${tickSpeed}`}
+              x1={lineEndX}
+              y1={lineEndY}
+              x2={tickX}
+              y2={tickY}
+              stroke="white"
+              strokeWidth="1"
+            />
+          );
+        })}
+        
+        {/* Needle */}
+        <line
+          x1={100}
+          y1={100}
+          x2={100 + needleLength * Math.cos(valueRadians)}
+          y2={100 - needleLength * Math.sin(valueRadians)}
+          stroke="red"
+          strokeWidth="2"
+          strokeLinecap="round"
+        />
+        
+        {/* Needle center */}
+        <circle
+          cx={100}
+          cy={100}
+          r={5}
+          fill="red"
+        />
+        
+        {/* Speed value display */}
+        <text
+          x={100}
+          y={75}
+          textAnchor="middle"
+          fill="white"
+          fontSize="24"
+          fontWeight="bold"
+        >
+          {Math.round(boundedValue)}
+        </text>
+        
+        {/* Unit display */}
+        <text
+          x={100}
+          y={90}
+          textAnchor="middle"
+          fill="white"
+          fontSize="14"
+        >
+          {unit}
+        </text>
+      </svg>
     </div>
   );
 };
@@ -96,7 +224,7 @@ const VehicleInfo: React.FC<VehicleInfoProps> = ({
       
       {/* Speedometer */}
       <div className="px-4 mb-6">
-        <Speedometer value={currentSpeed} maxValue={maxSpeed} />
+        <HalfCircleSpeedometer speed={currentSpeed} maxSpeed={maxSpeed} />
       </div>
       
       {/* Device Information */}
