@@ -8,10 +8,9 @@ import Controls from "./Controls";
 import Graph from "./Graph";
 
 // Constants
-const GOOGLE_MAPS_API_KEY: string =
-  import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
-const BASE_URL = "https://api-dev.k8s.imztech.io/api/v1/track-play";
-const TRIP_API_URL = "http://localhost:9099/trip";
+const GOOGLE_MAPS_API_KEY: string =import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
+const TRACK_PLAY_BASE_URL = import.meta.env.VITE_TRACK_PLAY_BASE_URL;
+const TRIP_API_URL = import.meta.env.VITE_TRIP_API_URL;
 
 // Toggle between API and local JSON file data
 // Set to true to use local JSON file data, false to use API data
@@ -428,7 +427,7 @@ const TrackPlay: React.FC = () => {
       const istEndDate = convertToIST(endDate);
 
       const response = await axios.get<TrackDataResponse>(
-        `${BASE_URL}/trackdata`,
+        `${TRACK_PLAY_BASE_URL}/trackdata`,
         {
           params: {
             startDate: istStartDate,
